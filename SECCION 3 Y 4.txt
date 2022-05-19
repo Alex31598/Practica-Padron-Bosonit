@@ -1,0 +1,247 @@
+OBJETIVO SECCION 3: PREGUNTAS SOBRE IMPALA Y REALIZAR ALGUNA CONSULTA COMPARANDO CON HIVE
+
+PREGUNTA 1: ¿Qué es Impala?
+
+RESPUESTA: Es una herramienta que nos permite hacer consultas SQL a muy baja latencia.Además, también se puede usar
+           desde la interfaz de Hue, por lo que se integra perfectamente con el ecosistema de Hadoop. 
+
+
+PREGUNTA 2: ¿En qué se diferencia de Hive?
+
+REPUESTA: Por el diseño y arquitectura de Apache Impala, su rendimiento puede ser superior al de Apache Hive en varios órdenes de magnitud.
+
+
+PREGUNTA 3: Comando INVALIDATE METADATA, ¿en qué consiste?
+
+RESPUESTA: La instrucción INVALIDATE METADATA marca los metadatos de una o todas las tablas como obsoletas. La próxima vez que el servicio de Impala
+           realice una consulta en una tabla cuyos metadatos estén invalidados, Impala recargará los metadatos asociados antes de continuar con la consulta.
+           Como esta es una operación muy costosa en comparación con la actualización incremental de metadatos realizada por la instrucción REFRESH, cuando sea posible,
+           prefiera REFRESH en lugar de INVALIDATE METADATA.
+
+
+3.5) Calcular el total de EspanolesHombres, espanolesMujeres, ExtranjerosHombres y 
+ExtranjerosMujeres agrupado por DESC_DISTRITO y DESC_BARRIO
+
+
+----> SELECT sum(EspanolesHombres),sum(EspanolesMujeres), sum(ExtranjerosHombres),sum(ExtranjerosMujeres),DESC_DISTRITO,DESC_BARRIO  from padron_parquet_2
+ Group BY DESC_DISTRITO,DESC_BARRIO LIMIT 15;
+
+
+OBSERVACION: Si hacemos la consulta anterior en HIVE observamos que tarda unos 25s mientras que si la hacemos en Impala, tarda menos de 1s. Es bien conocido la baja latencia
+            que presenta Impala, a diferencia de HIVE.
+
+
+
+
+
+
+
+
+
+
+
+
+SECCION 4
+
+
+4.1) Crear tabla (Hive) padron_particionado particionada por campos DESC_DISTRITO y 
+DESC_BARRIO cuyos datos estén en formato parquet.
+
+
+CREATE TABLE IF NOT EXISTS padron_particionado(
+COD_DISTRITO int,
+COD_DIST_BARRIO int,
+COD_BARRIO int,
+COD_DIST_SECCION int,
+COD_SECCION int,
+COD_EDAD_INT int,
+EspanolesHombres int,
+EspanolesMujeres int,
+ExtranjerosHombres int,
+ExtranjerosMujeres int)
+PARTITIONED BY (DESC_DISTRITO string, DESC_BARRIO string)
+STORED AS PARQUET;
+
+
+4.2) Insertar datos (en cada partición) dinámicamente (con Hive) en la tabla recién 
+creada a partir de un select de la tabla padron_parquet_2.
+
+
+
+SET hive.exec.dynamic.partition=true;
+SET hive.exec.dynamic.partition.mode=non-strict;
+SET hive.exec.max.dynamic.partitions=10000;
+SET hive.exec.max.dynamic.partitions.pernode=1000;
+SET mapreduce.map.memory.mb=2048;
+SET mapreduce.reduce.memory.mb=2048;
+SET mapreduce.map.java.opts=-Xmx1800m;
+
+
+
+CREATE TABLE IF NOT EXISTS padron_particionado(
+COD_DISTRITO int,
+COD_DIST_BARRIO int,
+COD_BARRIO int,
+COD_DIST_SECCION int,
+COD_SECCION int,
+COD_EDAD_INT int,
+EspanolesHombres int,
+EspanolesMujeres int,
+ExtranjerosHombres int,
+ExtranjerosMujeres int)
+PARTITIONED BY (DESC_DISTRITO string, DESC_BARRIO string)
+STORED AS PARQUET;
+
+
+
+INSERT OVERWRITE TABLE padron_particionado PARTITION(DESC_DISTRITO,DESC_BARRIO) SELECT cod_distrito, cod_dist_barrio, cod_barrio, cod_dist_barrio, cod_seccion, cod_edad_int, espanoleshombres, espanolesmujeres, extranjeroshombres, extranjerosmujeres, desc_distrito, desc_barrio FROM padron_parquet_2;
+
+
+
+
+
+4.3) Hacer invalidate metadata en Impala de la base de datos padron_particionado
+
+invalidate metadata;
+
+SHOW DATABASES;
+
+USE datos_padron;
+
+invalidate metadata datos_padron.padron_particionado;
+
+
+
+ 4.4) Calcular el total de EspanolesHombres, EspanolesMujeres, ExtranjerosHombres y 
+ExtranjerosMujeres agrupado por DESC_DISTRITO y DESC_BARRIO para los distritos 
+CENTRO, LATINA, CHAMARTIN, TETUAN, VICALVARO y BARAJAS.
+
+SELECT sum(EspanolesHombres),sum(EspanolesMujeres), sum(ExtranjerosHombres),sum(ExtranjerosMujeres),DESC_DISTRITO,DESC_BARRIO  from padron_particionado WHERE DESC_DISTRITO='CENTRO' OR DESC_DISTRITO='LATINA' OR DESC_DISTRITO = 'CHAMARTIN'  OR DESC_DISTRITO = 'TETUAN' OR DESC_DISTRITO = 'VICALVARO' OR DESC_DISTRITO = 'BARAJAS' 
+Group BY DESC_DISTRITO,DESC_BARRIO LIMIT 15;
+
+
+La tabla padron_parquet es más rápida que padron_particionado, esto se debe a que aunque se tenga partida por los mismo grupos
+que para los que se hace la consulta, la tabla padron_particionada está dividida y hay que unirla de nuevo por lo que se pierde 
+más tiempo, esto con un conjunto de datos mayor haría que padron_particionado fuera mucho más rápdo pero en este caso el conjunto
+de datos es relativamente pequeño y además nos encontramos trabajando en local por lo que el hecho de que la tabla este particionada 
+nos perjudica en cuanto a tiempos de ejecución se refiere para este ejemplo en concreto.
+
+4.5 Llevar a cabo la consulta en Hive en las tablas padron_parquet y 
+padron_partitionado. ¿Alguna conclusión?
+
+
+SELECT sum(EspanolesHombres),sum(EspanolesMujeres), sum(ExtranjerosHombres),sum(ExtranjerosMujeres),DESC_DISTRITO,DESC_BARRIO  from padron_parquet WHERE DESC_DISTRITO='CENTRO' OR DESC_DISTRITO='LATINA' OR DESC_DISTRITO = 'CHAMARTIN'  OR DESC_DISTRITO = 'TETUAN' OR DESC_DISTRITO = 'VICALVARO' OR DESC_DISTRITO = 'BARAJAS' 
+Group BY DESC_DISTRITO,DESC_BARRIO LIMIT 15;
+
+A diferencia de lo que  pasa en Impala en Hive la tabla padron_particionado es más rápida esto se puede deber a que Impala es una herramienta
+más rápida que hive por lo que optimiza mejor las consultas y toma toda la ventaja posible de que la tabla se encuetre particionada.
+
+
+4.6) Llevar a cabo la consulta en Impala en las tablas padron_parquet y 
+padron_particionado. ¿Alguna conclusión?
+
+
+SELECT sum(EspanolesHombres),sum(EspanolesMujeres), sum(ExtranjerosHombres),sum(ExtranjerosMujeres),DESC_DISTRITO,DESC_BARRIO  from padron_parquet WHERE DESC_DISTRITO='CENTRO' OR DESC_DISTRITO='LATINA' OR DESC_DISTRITO = 'CHAMARTIN'  OR DESC_DISTRITO = 'TETUAN' OR DESC_DISTRITO = 'VICALVARO' OR DESC_DISTRITO = 'BARAJAS' 
+Group BY DESC_DISTRITO,DESC_BARRIO LIMIT 15;
+
+TIEMPO: 18.403
+
+
+SELECT sum(EspanolesHombres),sum(EspanolesMujeres), sum(ExtranjerosHombres),sum(ExtranjerosMujeres),DESC_DISTRITO,DESC_BARRIO  from padron_particionado WHERE DESC_DISTRITO='CENTRO' OR DESC_DISTRITO='LATINA' OR DESC_DISTRITO = 'CHAMARTIN'  OR DESC_DISTRITO = 'TETUAN' OR DESC_DISTRITO = 'VICALVARO' OR DESC_DISTRITO = 'BARAJAS' 
+Group BY DESC_DISTRITO,DESC_BARRIO LIMIT 15;
+
+TIEMPO: 20.45
+
+Es más rápida la tabla sin particionar a lo mejor por estar trabajando en local Impala no puede sacar toda 
+
+4.7)Hacer consultas de agregación (Max, Min, Avg, Count) tal cual el ejemplo anterior 
+con las 3 tablas (padron_txt_2, padron_parquet_2 y padron_particionado) y 
+comparar rendimientos tanto en Hive como en Impala y sacar conclusiones.
+
+
+
+
+###############
+IMPALA
+###############
+
+
+SELECT Max(EspanolesHombres), Min(EspanolesMujeres), Avg(ExtranjerosHombres), Count(ExtranjerosMujeres),DESC_DISTRITO,DESC_BARRIO  from padron_txt_2 WHERE DESC_DISTRITO='CENTRO' OR DESC_DISTRITO='LATINA' OR DESC_DISTRITO = 'CHAMARTIN'  OR DESC_DISTRITO = 'TETUAN' OR DESC_DISTRITO = 'VICALVARO' OR DESC_DISTRITO = 'BARAJAS' 
+Group BY DESC_DISTRITO,DESC_BARRIO LIMIT 15;
+
+TIEMPO: 0.36
+
+
+SELECT Max(EspanolesHombres), Min(EspanolesMujeres), Avg(ExtranjerosHombres), Count(ExtranjerosMujeres),DESC_DISTRITO,DESC_BARRIO  from padron_parquet_2 WHERE DESC_DISTRITO='CENTRO' OR DESC_DISTRITO='LATINA' OR DESC_DISTRITO = 'CHAMARTIN'  OR DESC_DISTRITO = 'TETUAN' OR DESC_DISTRITO = 'VICALVARO' OR DESC_DISTRITO = 'BARAJAS' 
+Group BY DESC_DISTRITO,DESC_BARRIO LIMIT 15;
+
+TIEMPO: 0.24
+
+
+SELECT Max(EspanolesHombres), Min(EspanolesMujeres), Avg(ExtranjerosHombres), Count(ExtranjerosMujeres),DESC_DISTRITO,DESC_BARRIO  from padron_particionado WHERE DESC_DISTRITO='CENTRO' OR DESC_DISTRITO='LATINA' OR DESC_DISTRITO = 'CHAMARTIN'  OR DESC_DISTRITO = 'TETUAN' OR DESC_DISTRITO = 'VICALVARO' OR DESC_DISTRITO = 'BARAJAS' 
+Group BY DESC_DISTRITO,DESC_BARRIO LIMIT 15;
+
+TIEMPO: 0.58
+
+############
+#HIVE
+############
+
+
+SELECT Max(EspanolesHombres), Min(EspanolesMujeres), Avg(ExtranjerosHombres), Count(ExtranjerosMujeres),DESC_DISTRITO,DESC_BARRIO  from padron_txt_2 WHERE DESC_DISTRITO='CENTRO' OR DESC_DISTRITO='LATINA' OR DESC_DISTRITO = 'CHAMARTIN'  OR DESC_DISTRITO = 'TETUAN' OR DESC_DISTRITO = 'VICALVARO' OR DESC_DISTRITO = 'BARAJAS' 
+Group BY DESC_DISTRITO,DESC_BARRIO LIMIT 15;
+
+TIEMPO: 20.115
+
+
+SELECT Max(EspanolesHombres), Min(EspanolesMujeres), Avg(ExtranjerosHombres), Count(ExtranjerosMujeres),DESC_DISTRITO,DESC_BARRIO  from padron_parquet_2 WHERE DESC_DISTRITO='CENTRO' OR DESC_DISTRITO='LATINA' OR DESC_DISTRITO = 'CHAMARTIN'  OR DESC_DISTRITO = 'TETUAN' OR DESC_DISTRITO = 'VICALVARO' OR DESC_DISTRITO = 'BARAJAS' 
+Group BY DESC_DISTRITO,DESC_BARRIO LIMIT 15;
+
+TIEMPO: 18.299
+
+
+SELECT Max(EspanolesHombres), Min(EspanolesMujeres), Avg(ExtranjerosHombres), Count(ExtranjerosMujeres),DESC_DISTRITO,DESC_BARRIO  from padron_particionado WHERE DESC_DISTRITO='CENTRO' OR DESC_DISTRITO='LATINA' OR DESC_DISTRITO = 'CHAMARTIN'  OR DESC_DISTRITO = 'TETUAN' OR DESC_DISTRITO = 'VICALVARO' OR DESC_DISTRITO = 'BARAJAS' 
+Group BY DESC_DISTRITO,DESC_BARRIO LIMIT 15;
+
+TIEMPO: 18.652
+
+
+Conclusiones:
+Impala es en general más rápido que Hive
+
+El hecho de que la tabla este particionada no supone una mejora de rendimiento porque estamos trabajando en local y el conjunto de datos es muy pequeño
+para que se puede apreciar significativamente el hecho de que esten la tabla este particionada
+
+-----------------------------------------
+PRUEBAS
+-----------------------------------------
+
+ CREATE TABLE IF NOT EXISTS padron_pruebas(
+COD_DISTRITO int,
+DESC_DISTRITO string,
+COD_DIST_BARRIO int,
+DESC_BARRIO string,
+COD_BARRIO int,
+COD_DIST_SECCION int,
+COD_SECCION int,
+COD_EDAD_INT int,
+EspanolesHombres int,
+EspanolesMujeres int,
+ExtranjerosHombres int,
+ExtranjerosMujeres int)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.OpenCSVSerde'
+WITH SERDEPROPERTIES (
+"separatorChar" = "\;", "serialization.encoding"='ISO-8859-1'
+)
+STORED AS TEXTFILE
+TBLPROPERTIES("skip.header.line.count"="1");
+
+
+LOAD DATA LOCAL INPATH '/home/cloudera/padron/Rango_Edades_Seccion_202204.csv'INTO TABLE padron_pruebas;
+
+
+
+INSERT OVERWRITE TABLE padron_particionado PARTITION(DESC_DISTRITO,DESC_BARRIO) SELECT * FROM padron_pruebas;
+
+
+INSERT INTO padron_pruebas 
